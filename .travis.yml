@@ -4,6 +4,9 @@ node_js:
   - "10.0"
   - "9.0"
 
+services:
+  - docker
+
 # Set DISPLAY for Xvfb
 env:
   - DISPLAY=:99.0
@@ -16,6 +19,22 @@ addons:
     packages:
       - google-chrome-stable
 
+stages:
+  - name: test
+  - name: test-build
+  - name: build
+    if: |
+      tag =~ /^v\d+\.\d+(\.\d+)?(-\S*)?$/ || \
+      tag =~ /^dev\/v\d+\.\d+(\.\d+)?(-\S*)?$/ || \
+      tag =~ /^release\/v\d+\.\d+(\.\d+)?(-\S*)?$/ || \
+      tag =~ /^prod\/v\d+\.\d+(\.\d+)?(-\S*)?$/
+  - name: deploy
+    if: |
+      tag =~ /^v\d+\.\d+(\.\d+)?(-\S*)?$/ || \
+      tag =~ /^dev\/v\d+\.\d+(\.\d+)?(-\S*)?$/ || \
+      tag =~ /^release\/v\d+\.\d+(\.\d+)?(-\S*)?$/ || \
+      tag =~ /^prod\/v\d+\.\d+(\.\d+)?(-\S*)?$/
+
 # Start Xvfb so you can run headless Chrome
 before_install:
   - sh -e /etc/init.d/xvfb start
@@ -27,6 +46,30 @@ before_script:
   - yarn global add @angular/cli
 
 script:
-  # - ng test
-  # - ng e2e
-  - ng build --prod
+  - yarn list
+  # - yarn check
+  # - yarn run test
+  # - yarn run e2e
+
+jobs:
+  include:
+    - stage: test-build
+      install:
+        - yarn install
+
+      script:
+        - yarn run build --prod
+
+    - stage: build
+      before_script:
+        - git clone https://$GITHUB_TOKEN@github.com/SamwelOpiyo/turing_devops_challenge.git ../turing_devops_challenge/
+        - cp ../turing_devops_challenge/Angular/* .
+      script:
+        - docker login -u $DOCKER_HUB_USER -p $DOCKER_HUB_PASSWORD
+        - docker build -t $DOCKER_HUB_USER/turing_angular:$(echo $TRAVIS_TAG | tr "/" .) .
+        - docker push $DOCKER_HUB_USER/turing_angular:$(echo $TRAVIS_TAG | tr "/" .)
+        - docker rmi $DOCKER_HUB_USER/turing_angular:$(echo $TRAVIS_TAG | tr "/" .)
+        - docker logout
+
+    # - stage: deploy
+      # script: ./deploy
