@@ -19,6 +19,7 @@ Open https://travis-ci.org/{user/organization}/{repository}/settings for example
 * DOCKER_HUB_PASSWORD
 * DOCKER_HUB_USER
 * GITHUB_TOKEN
+* GCP_MAIN_SERVICE_ACCOUNT :To get this value you will need the path of admin service account generated to run terraform. Use `base64 {path_to_SA} | paste -sd ''` to obtain it. For example in our case navigate to configurations repository, then run `base64 service_account_keys/main_service_account.json | paste -sd ''`.
 
 ### Activating Repository for CI/CD.
 

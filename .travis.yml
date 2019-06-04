@@ -1,8 +1,9 @@
 language: node_js
 node_js:
   - "11.0"
-  - "10.0"
-  - "9.0"
+  - "10.9.0"
+  - "12.0"
+  - "12.2.0"
 
 services:
   - docker
@@ -71,5 +72,51 @@ jobs:
         - docker rmi $DOCKER_HUB_USER/turing_angular:$(echo $TRAVIS_TAG | tr "/" .)
         - docker logout
 
-    # - stage: deploy
-      # script: ./deploy
+    - stage: deploy
+      install:
+        # Install Google Cloud SDK
+        - if [ ! -d "$HOME/google-cloud-sdk/bin" ]; then
+            rm -rf $HOME/google-cloud-sdk;
+            sudo rm -rf /usr/lib/google-cloud-sdk/;
+            export CLOUDSDK_CORE_DISABLE_PROMPTS=1;
+            curl https://sdk.cloud.google.com | bash > /dev/null;
+          fi
+        # Add gcloud to $PATH
+        - source /home/travis/google-cloud-sdk/path.bash.inc
+        # Install Kubectl
+        - if ! [ -x "$(command -v kubectl)" ]; then
+            gcloud components install kubectl --quiet;
+          fi
+        # Install Terraform
+        - if ! [ -x "$(command -v terraform)" ]; then
+            TERRAFORM_VERSION=0.12.0;
+            URL="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip";
+            wget $URL;
+            unzip terraform_${TERRAFORM_VERSION}_linux_amd64.zip -d executables/;
+            sudo mv executables/terraform /usr/local/bin/terraform;
+            sudo chmod +x /usr/local/bin/terraform;
+            rm terraform_${TERRAFORM_VERSION}_linux_amd64.zip;
+            rm -rf executables/;
+          fi
+      before_script:
+        - git clone https://$GITHUB_TOKEN@github.com/SamwelOpiyo/turing_devops_challenge.git ../turing_devops_challenge/
+        - cd ../turing_devops_challenge/terraform/
+        - mkdir ./service_account_keys/
+        - echo $GCP_MAIN_SERVICE_ACCOUNT | base64 --decode > ./service_account_keys/main_service_account.json
+        - gcloud auth activate-service-account --key-file ./service_account_keys/main_service_account.json
+        - export GOOGLE_APPLICATION_CREDENTIALS=./service_account_keys/main_service_account.json
+      script:
+        - terraform init
+        - terraform plan -var-file variables.tfvars
+          -var="angular_docker_image=$DOCKER_HUB_USER/turing_angular:$(echo $TRAVIS_TAG | tr "/" .)"
+          -var="vue_docker_image=$(terraform output vue_image || echo '$DOCKER_HUB_USER/turing_vue:dev.v0.0.1-test')"
+          -var="react_docker_image=$(terraform output react_image || echo '$DOCKER_HUB_USER/turing_react:dev.v0.0.1-test')"
+          -target kubernetes_deployment.angular-deployment
+        - terraform apply -auto-approve -var-file variables.tfvars
+          -var="angular_docker_image=$DOCKER_HUB_USER/turing_angular:$(echo $TRAVIS_TAG | tr "/" .)"
+          -var="vue_docker_image=$(terraform output vue_image || echo '$DOCKER_HUB_USER/turing_vue:dev.v0.0.1-test')"
+          -var="react_docker_image=$(terraform output react_image || echo '$DOCKER_HUB_USER/turing_react:dev.v0.0.1-test')"
+          -target kubernetes_deployment.angular-deployment
+      after_script:
+        - rm -rf ./service_account_keys/
+        - unset TF_CREDS
